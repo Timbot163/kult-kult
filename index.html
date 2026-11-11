@@ -62,12 +62,12 @@ nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 <div class="row"><button id="ab" onclick="sub()">Войти</button><button class="g" id="at" onclick="tg()">Нет аккаунта? Регистрация</button></div></section>
 
 <section class="scr" id="verify"><div class="logo">Подтверди почту</div><p>Мы отправили ссылку на <b id="ve"></b>. Перейди по ней, потом нажми кнопку.</p>
-<p class="m" id="vm"></p><div class="row"><button onclick="chk()">Я подтвердил почту</button><button class="g" onclick="U.sendEmailVerification().then(()=>alert('Письмо отправлено'))">Отправить ещё раз</button><button class="g" onclick="auth.signOut()">Выйти</button></div></section>
+<p class="m" id="vm"></p><p class="m" id="rs"></p><div class="row"><button onclick="chk()">Я подтвердил почту</button><button class="g" onclick="askSkip()">Попросить пропустить подтверждение</button><button class="g" onclick="U.sendEmailVerification().then(()=>alert('Письмо отправлено'))">Отправить ещё раз</button><button class="g" onclick="auth.signOut()">Выйти</button></div></section>
 
 <section class="scr" id="banned"><div class="logo">Вы забанены</div><p class="m">Администратор закрыл доступ к этому аккаунту.</p><button class="g" onclick="auth.signOut()">Выйти</button></section>
 
 <section class="scr" id="main"><div class="logo">Культ Культ</div>
-<nav><button id="n-top" onclick="go('top')">Рейтинг</button><button id="n-mine" onclick="go('mine')">Мой культ</button><button id="n-new" onclick="go('new')">Создать культ</button><button id="n-wars" onclick="go('wars')">Войны</button><button id="n-admin" onclick="go('admin')" style="display:none">Админ</button><button class="g" onclick="auth.signOut()">Выйти</button></nav>
+<nav><button id="n-top" onclick="go('top')">Рейтинг</button><button id="n-mine" onclick="go('mine')">Мой культ</button><button id="n-new" onclick="go('new')">Создать культ</button><button id="n-wars" onclick="go('wars')">Войны</button><button id="n-mod" onclick="go('mod')" style="display:none">Модератор</button><button id="n-admin" onclick="go('admin')" style="display:none">Админ</button><button class="g" onclick="auth.signOut()">Выйти</button></nav>
 <select id="pick" onchange="if(this.value){openCult(this.value);this.value=''}"></select><div id="V"></div></section>
 <input type="file" id="bgf" accept="image/*" hidden onchange="setImg(this,'bg')"><input type="file" id="avf" accept="image/*" hidden onchange="setImg(this,'avatar')">
 
@@ -86,7 +86,7 @@ firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth(),db=firebase.firestore(),FV=firebase.firestore.FieldValue;
 const $=s=>document.querySelector(s),V=$('#V');
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let U,me,cults=[],users=[],wars=[],msgs=[],cur,tab='top',unsubs=[],mu,au,reg=0,started=0;
+let U,me,cults=[],users=[],wars=[],reqs=[],msgs=[],cur,tab='top',unsubs=[],mu,au,reg=0,started=0;
 const isAdmin=()=>U&&ADMINS.map(e=>e.toLowerCase()).includes((U.email||'').toLowerCase());
 window.onunhandledrejection=e=>alert(e.reason&&e.reason.message||e.reason);
 const mine=()=>me.cultIds||[],inC=id=>mine().includes(id),full=()=>!isAdmin()&&mine().length>=1;
@@ -95,7 +95,20 @@ const show=id=>{document.querySelectorAll('.scr').forEach(s=>s.classList.toggle(
 async function chk(){const m=$('#vm');m.textContent='Проверяю…';
  try{await U.reload();await U.getIdToken(true)}catch(e){m.textContent='Ошибка: '+(e.code||e.message);return}
  if(U.emailVerified||isAdmin())location.reload();
- else m.textContent='Firebase пока не видит подтверждения. Открой ссылку из самого нового письма (проверь «Спам»), дождись надписи «Your email has been verified» и нажми кнопку снова. Если ссылка пишет «expired» или «already used», нажми «Отправить ещё раз» и открой новое письмо.'}
+ else m.textContent='Версия 4. '+U.email+': Firebase пока не видит подтверждения. Открой ссылку из самого нового письма (проверь «Спам»), дождись надписи «Your email has been verified» и нажми кнопку снова. Если ссылка пишет «expired» или «already used», нажми «Отправить ещё раз» и открой новое письмо.'}
+async function askSkip(){const t=(prompt('Коротко напиши модераторам, почему нужно пропустить подтверждение почты (до 300 символов)')||'').trim().slice(0,300);if(!t)return;
+ await db.collection('requests').doc(U.uid).set({email:U.email,name:U.displayName||'',text:t,status:'pending',ts:Date.now()})}
+function watchReq(u){unsubs.push(db.collection('requests').doc(u.uid).onSnapshot(d=>{const r=d.data(),m=$('#rs');
+ if(!r)m.textContent='';else if(r.status=='approved')location.reload();
+ else m.textContent=r.status=='rejected'?'Заявка отклонена. Подтверди почту по ссылке из письма.':'Заявка отправлена, ждём решения модераторов.'},()=>{}))}
+function drawReqs(){const l=$('#rq');if(!l)return;const p=reqs.filter(r=>r.status=='pending');
+ l.innerHTML=(p.length?'<h2>Заявки на пропуск подтверждения</h2>'+p.map(r=>`<div class="card"><div class="g1"><b>${esc(r.name)} · ${esc(r.email)}</b><span class="m">${esc(r.text)}</span></div><button onclick="decide('${r.id}','approved')">Принять</button><button class="r" onclick="decide('${r.id}','rejected')">Отклонить</button></div>`).join(''):'<p class="m">Новых заявок нет.</p>')+'<h2 style="margin-top:14px">Аккаунты</h2>'}
+async function decide(id,st){await db.doc('requests/'+id).update({status:st})}
+async function muteUser(id){const u=users.find(x=>x.id==id);
+ if(u.muteUntil>Date.now())return db.doc('users/'+id).update({muteUntil:0});
+ const m=parseInt(prompt('На сколько минут замутить? (60 = час, 1440 = сутки)'),10);if(!m||m<1)return;
+ await db.doc('users/'+id).update({muteUntil:Date.now()+m*60000})}
+async function resetPw(id){const u=users.find(x=>x.id==id);if(!confirm('Отправить письмо для смены пароля на '+u.email+'?'))return;await auth.sendPasswordResetEmail(u.email);alert('Письмо отправлено')}
 function tg(){reg=!reg;$('#nk').style.display=reg?'':'none';$('#ab').textContent=reg?'Зарегистрироваться':'Войти';$('#at').textContent=reg?'Уже есть аккаунт? Войти':'Нет аккаунта? Регистрация'}
 async function sub(){const e=$('#em').value.trim(),p=$('#pw').value;
  if(reg){const n=$('#nk').value.trim();if(!n)return alert('Введите ник');
@@ -106,7 +119,9 @@ auth.onAuthStateChanged(async u=>{
  U=u;unsubs.forEach(f=>f());unsubs=[];mu&&mu();au&&au();started=0;me=null;
  if(!u)return show('auth');
  try{await u.reload()}catch(e){}
- if(!u.emailVerified&&!isAdmin()){$('#ve').textContent=u.email;return show('verify')}
+ if(!u.emailVerified&&!isAdmin()){
+  let skip=false;try{const r=await db.collection('requests').doc(u.uid).get();skip=r.exists&&r.data().status=='approved'}catch(e){}
+  if(!skip){$('#ve').textContent=u.email;$('#vm').textContent='Версия сайта: 4. Статус аккаунта: почта не подтверждена.';watchReq(u);return show('verify')}}
  try{await u.getIdToken(true)}catch(e){}
  const ref=db.collection('users').doc(u.uid);
  if(!(await ref.get()).exists)await ref.set({email:u.email,name:u.displayName||u.email.split('@')[0],cultIds:[],banned:false});
@@ -118,21 +133,23 @@ auth.onAuthStateChanged(async u=>{
 function render(){
  if(!me)return;
  if(me.banned)return show('banned');
- show('main');$('#n-admin').style.display=isAdmin()?'':'none';fillPick();
+ show('main');$('#n-admin').style.display=isAdmin()?'':'none';$('#n-mod').style.display=isSuper()?'':'none';fillPick();
  if(!started){started=1;go('top');return}
  if(tab=='top'||tab=='mine')drawList();if(tab=='cult')drawCult();if(tab=='wars')drawWars();
 }
 function go(t){
  tab=t;mu&&mu();au&&au();mu=au=null;
- ['top','mine','new','wars','admin'].forEach(x=>$('#n-'+x).classList.toggle('on',x==t));
+ ['top','mine','new','wars','admin','mod'].forEach(x=>$('#n-'+x).classList.toggle('on',x==t));
  if(t=='mine'){const m=mine();if(!m.length)return go('new');if(m.length==1)return openCult(m[0]);V.innerHTML='<div id="list"></div>';return drawList()}
  if(t=='top'){V.innerHTML='<input id="q" placeholder="Поиск культа по названию" oninput="drawList()"><div id="list"></div>';drawList()}
  if(t=='new')V.innerHTML=`<h2>Новый культ</h2>${full()?'<p class="m">Вы уже состоите в культе. Чтобы создать новый, сначала выйдите из текущего.</p>':''}
   <input id="cn" maxlength="20" placeholder="Название (до 20 символов)"><input id="ct" maxlength="5" placeholder="Тег (2–5 символов)">
   <p class="m">Аватарка культа:</p><input id="caf" type="file" accept="image/*"><div class="row"><button onclick="create()" ${full()?'disabled':''}>Создать культ</button></div>`;
  if(t=='wars'){V.innerHTML='<div id="wlist"></div>';drawWars()}
- if(t=='admin'){V.innerHTML='<input id="uq" placeholder="Поиск пользователя по нику или email" oninput="drawUsers()"><div id="ul"></div>';
-  au=db.collection('users').limit(300).onSnapshot(q=>{users=q.docs.map(d=>({id:d.id,...d.data()}));drawUsers()})}
+ if(t=='admin'||t=='mod'){V.innerHTML=(t=='admin'?'<div id="rq"></div>':'')+'<input id="uq" placeholder="Поиск пользователя по нику или email" oninput="drawUsers()"><div id="ul"></div>';
+  const a=db.collection('users').limit(300).onSnapshot(q=>{users=q.docs.map(d=>({id:d.id,...d.data()}));drawUsers()});
+  const b=t=='admin'?db.collection('requests').orderBy('ts','desc').limit(100).onSnapshot(q=>{reqs=q.docs.map(d=>({id:d.id,...d.data()}));drawReqs()}):()=>{};
+  au=()=>{a();b()}}
 }
 const av=(c,s)=>c.avatar?`<img class="av" src="${c.avatar}" style="width:${s}px;height:${s}px">`:`<div class="av" style="width:${s}px;height:${s}px">${esc([...(c.name||'?')][0])}</div>`;
 
@@ -145,7 +162,7 @@ function drawList(){
 }
 function openCult(id){
  tab='cult';cur=id;mu&&mu();au&&au();
- ['top','mine','new','wars','admin'].forEach(x=>$('#n-'+x).classList.toggle('on',x=='mine'&&inC(id)));
+ ['top','mine','new','wars','admin','mod'].forEach(x=>$('#n-'+x).classList.toggle('on',x=='mine'&&inC(id)));
  V.innerHTML=`<div id="hd"></div><div id="chat"><div id="msgs"></div><div class="row"><input id="mi" maxlength="500" placeholder="Напиши сообщение культу"><button onclick="send()">Отправить</button></div></div>`;
  $('#mi').onkeydown=e=>{if(e.key=='Enter'&&!e.isComposing)send()};
  mu=db.collection('cults').doc(id).collection('messages').orderBy('ts','desc').limit(100).onSnapshot(q=>{msgs=q.docs.map(d=>({id:d.id,...d.data()})).reverse();drawMsgs()},()=>{});
@@ -198,10 +215,11 @@ function drawMsgs(){
  if(bot)b.scrollTop=b.scrollHeight;
 }
 function drawUsers(){
- const l=$('#ul');if(!l)return;const q=($('#uq').value||'').toLowerCase();
- l.innerHTML=users.filter(u=>(u.name+u.email).toLowerCase().includes(q)).map(u=>{const c=(u.cultIds||[]).map(i=>cults.find(x=>x.id==i)).filter(Boolean);
-  return `<div class="card"><div class="g1"><b>${esc(u.name)}${u.banned?' (бан)':''}</b><span class="m">${esc(u.email)}${c.length?' · '+c.map(x=>'['+esc(x.tag)+']').join(' '):''}</span></div>${ADMINS.map(e=>e.toLowerCase()).includes((u.email||'').toLowerCase())?'':`<button class="${u.banned?'':'r'}" onclick="banUser('${u.id}',${!u.banned})">${u.banned?'Разбанить':'Забанить'}</button>`}</div>`}).join('');
-}
+ const l=$('#ul');if(!l)return;const q=($('#uq').value||'').toLowerCase(),mod=tab=='mod',AD=ADMINS.map(e=>e.toLowerCase());
+ l.innerHTML=users.filter(u=>(u.name+u.email).toLowerCase().includes(q)).map(u=>{
+  const c=(u.cultIds||[]).map(i=>cults.find(x=>x.id==i)).filter(Boolean),a=AD.includes((u.email||'').toLowerCase()),mt=u.muteUntil>Date.now();
+  return `<div class="card"><div class="g1"><b>${esc(u.name)}${u.banned?' (бан)':''}${mt?' (мут до '+new Date(u.muteUntil).toLocaleString()+')':''}</b><span class="m">${esc(u.email)}${c.length?' · '+c.map(x=>'['+esc(x.tag)+']').join(' '):''}</span></div>`+
+  (a?'':`<button class="${u.banned?'':'r'}" onclick="banUser('${u.id}',${!u.banned})">${u.banned?'Разбанить':'Забанить'}</button>`+(mod?`<button class="g" onclick="muteUser('${u.id}')">${mt?'Снять мут':'Мут'}</button><button class="g" onclick="resetPw('${u.id}')">Сброс пароля</button>`:''))+'</div>'}).join('')}
 
 const shrink=(f,m,q,sq)=>new Promise(r=>{const i=new Image();i.onload=()=>{let w=i.width,h=i.height,sx=0,sy=0,sw=w,sh=h;
  if(sq){sw=sh=Math.min(w,h);sx=(w-sw)/2;sy=(h-sh)/2;w=h=m}else{const k=Math.min(1,m/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k)}
@@ -218,7 +236,7 @@ async function join(id){if(inC(id))return;if(full())return alert('Сначала
  const b=db.batch();b.update(db.doc('users/'+U.uid),{cultIds:FV.arrayUnion(id)});b.update(db.doc('cults/'+id),{members:FV.increment(1)});await b.commit()}
 async function leave(id){if(!confirm('Выйти из культа?'))return;
  const b=db.batch();b.update(db.doc('cults/'+id),{members:FV.increment(-1)});b.update(db.doc('users/'+U.uid),{cultIds:FV.arrayRemove(id)});await b.commit()}
-async function send(){const i=$('#mi'),t=i.value.trim();if(!t)return;i.value='';
+async function send(){const i=$('#mi'),t=i.value.trim();if(!t)return;if(me.muteUntil>Date.now())return alert('Вы в муте ещё '+left(me.muteUntil-Date.now()));i.value='';
  await db.collection('cults').doc(cur).collection('messages').add({uid:U.uid,name:me.name,tags:myTags(),text:t,ts:FV.serverTimestamp()})}
 
 async function rename(id){const n=(prompt('Новое название (до 20 символов)')||'').trim();if(!n)return;if(n.length>20)return alert('Максимум 20 символов');await db.doc('cults/'+id).update({name:n})}
@@ -227,4 +245,5 @@ async function delMsg(id){await db.doc(`cults/${cur}/messages/${id}`).delete()}
 async function banUser(id,v){const u=users.find(x=>x.id==id),b=db.batch();
  b.update(db.doc('users/'+id),v?{banned:true,cultIds:[]}:{banned:false});
  if(v)(u.cultIds||[]).forEach(c=>b.update(db.doc('cults/'+c),{members:FV.increment(-1)}));await b.commit()}
+setInterval(()=>{if(U&&$('#verify').classList.contains('on'))U.reload().then(()=>{if(U.emailVerified)location.reload()}).catch(()=>{})},4000);
 </script></body></html>
