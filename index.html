@@ -59,12 +59,12 @@ nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 <section class="scr on" id="boot"><div class="logo">Культ Культ</div><p class="m" id="bm">Загрузка…</p></section>
 <section class="scr" id="auth"><div class="logo">Культ Культ</div><p class="m">Найди свой культ или создай новый.</p>
 <input id="nk" placeholder="Ник" maxlength="24" style="display:none"><input id="em" type="email" placeholder="Email"><input id="pw" type="password" placeholder="Пароль (от 6 символов)">
-<div class="row"><button id="ab" onclick="sub()">Войти</button><button class="g" id="at" onclick="tg()">Нет аккаунта? Регистрация</button></div></section>
+<div class="row"><button id="ab" onclick="sub()">Войти</button><button class="g" id="at" onclick="tg()">Нет аккаунта? Регистрация</button><button class="g" onclick="forgot()">Забыли пароль?</button></div></section>
 
 <section class="scr" id="verify"><div class="logo">Подтверди почту</div><p>Мы отправили ссылку на <b id="ve"></b>. Перейди по ней, потом нажми кнопку.</p>
 <p class="m" id="vm"></p><p class="m" id="rs"></p><div class="row"><button onclick="chk()">Я подтвердил почту</button><button class="g" onclick="askSkip()">Попросить пропустить подтверждение</button><button class="g" onclick="U.sendEmailVerification().then(()=>alert('Письмо отправлено'))">Отправить ещё раз</button><button class="g" onclick="auth.signOut()">Выйти</button></div></section>
 
-<section class="scr" id="banned"><div class="logo">Вы забанены</div><p class="m">Администратор закрыл доступ к этому аккаунту.</p><button class="g" onclick="auth.signOut()">Выйти</button></section>
+<section class="scr" id="banned"><div class="logo">Вы забанены</div><p class="m" id="bm2">Администратор закрыл доступ к этому аккаунту.</p><button class="g" onclick="auth.signOut()">Выйти</button></section>
 
 <section class="scr" id="main"><div class="logo">Культ Культ</div>
 <nav><button id="n-top" onclick="go('top')">Рейтинг</button><button id="n-mine" onclick="go('mine')">Мой культ</button><button id="n-new" onclick="go('new')">Создать культ</button><button id="n-wars" onclick="go('wars')">Войны</button><button id="n-mod" onclick="go('mod')" style="display:none">Модератор</button><button id="n-admin" onclick="go('admin')" style="display:none">Админ</button><button class="g" onclick="auth.signOut()">Выйти</button></nav>
@@ -86,7 +86,7 @@ firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth(),db=firebase.firestore(),FV=firebase.firestore.FieldValue;
 const $=s=>document.querySelector(s),V=$('#V');
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let U,me,cults=[],users=[],wars=[],reqs=[],msgs=[],cur,tab='top',unsubs=[],mu,au,reg=0,started=0;
+let U,me,cults=[],users=[],wars=[],reqs=[],reps=[],logs=[],msgs=[],cur,tab='top',unsubs=[],mu,au,reg=0,started=0;
 const isAdmin=()=>U&&ADMINS.map(e=>e.toLowerCase()).includes((U.email||'').toLowerCase());
 window.onunhandledrejection=e=>alert(e.reason&&e.reason.message||e.reason);
 const mine=()=>me.cultIds||[],inC=id=>mine().includes(id),full=()=>!isAdmin()&&mine().length>=1;
@@ -105,9 +105,9 @@ function drawReqs(){const l=$('#rq');if(!l)return;const p=reqs.filter(r=>r.statu
  l.innerHTML=(p.length?'<h2>Заявки на пропуск подтверждения</h2>'+p.map(r=>`<div class="card"><div class="g1"><b>${esc(r.name)} · ${esc(r.email)}</b><span class="m">${esc(r.text)}</span></div><button onclick="decide('${r.id}','approved')">Принять</button><button class="r" onclick="decide('${r.id}','rejected')">Отклонить</button></div>`).join(''):'<p class="m">Новых заявок нет.</p>')+'<h2 style="margin-top:14px">Аккаунты</h2>'}
 async function decide(id,st){await db.doc('requests/'+id).update({status:st})}
 async function muteUser(id){const u=users.find(x=>x.id==id);
- if(u.muteUntil>Date.now())return db.doc('users/'+id).update({muteUntil:0});
- const m=parseInt(prompt('На сколько минут замутить? (60 = час, 1440 = сутки)'),10);if(!m||m<1)return;
- await db.doc('users/'+id).update({muteUntil:Date.now()+m*60000})}
+ if(u.muteUntil>Date.now()){await db.doc('users/'+id).update({muteUntil:0});return log('unmute',u.name+' ('+u.email+')')}
+ const m=parseInt(prompt('На сколько минут замутить? (60 = час, 1440 = сутки)'),10);if(!m||m<1)return;const r=(prompt('Причина мута')||'').trim().slice(0,200);
+ await db.doc('users/'+id).update({muteUntil:Date.now()+m*60000});log('mute',u.name+' ('+u.email+')',r,m+' мин')}
 async function resetPw(id){const u=users.find(x=>x.id==id);if(!confirm('Отправить письмо для смены пароля на '+u.email+'?'))return;await auth.sendPasswordResetEmail(u.email);alert('Письмо отправлено')}
 function tg(){reg=!reg;$('#nk').style.display=reg?'':'none';$('#ab').textContent=reg?'Зарегистрироваться':'Войти';$('#at').textContent=reg?'Уже есть аккаунт? Войти':'Нет аккаунта? Регистрация'}
 async function sub(){const e=$('#em').value.trim(),p=$('#pw').value;
@@ -132,7 +132,8 @@ auth.onAuthStateChanged(async u=>{
 
 function render(){
  if(!me)return;
- if(me.banned)return show('banned');
+ if(me.banned&&(!me.banUntil||me.banUntil>Date.now())){$('#bm2').textContent='Администратор закрыл доступ к этому аккаунту'+(me.banUntil?' до '+new Date(me.banUntil).toLocaleString():'')+(me.banReason?'. Причина: '+me.banReason:'.');return show('banned')}
+ mine().forEach(i=>{const c=cults.find(x=>x.id==i);if(c&&(c.kicked||[]).includes(U.uid)&&!kg.has(i)){kg.add(i);db.doc('users/'+U.uid).update({cultIds:FV.arrayRemove(i)}).then(()=>alert('Вас выгнали из культа «'+c.name+'»'))}});
  show('main');$('#n-admin').style.display=isAdmin()?'':'none';$('#n-mod').style.display=isSuper()?'':'none';fillPick();
  if(!started){started=1;go('top');return}
  if(tab=='top'||tab=='mine')drawList();if(tab=='cult')drawCult();if(tab=='wars')drawWars();
@@ -146,10 +147,10 @@ function go(t){
   <input id="cn" maxlength="20" placeholder="Название (до 20 символов)"><input id="ct" maxlength="5" placeholder="Тег (2–5 символов)">
   <p class="m">Аватарка культа:</p><input id="caf" type="file" accept="image/*"><div class="row"><button onclick="create()" ${full()?'disabled':''}>Создать культ</button></div>`;
  if(t=='wars'){V.innerHTML='<div id="wlist"></div>';drawWars()}
- if(t=='admin'||t=='mod'){V.innerHTML=(t=='admin'?'<div id="rq"></div>':'')+'<input id="uq" placeholder="Поиск пользователя по нику или email" oninput="drawUsers()"><div id="ul"></div>';
-  const a=db.collection('users').limit(300).onSnapshot(q=>{users=q.docs.map(d=>({id:d.id,...d.data()}));drawUsers()});
-  const b=t=='admin'?db.collection('requests').orderBy('ts','desc').limit(100).onSnapshot(q=>{reqs=q.docs.map(d=>({id:d.id,...d.data()}));drawReqs()}):()=>{};
-  au=()=>{a();b()}}
+ if(t=='admin'||t=='mod'){V.innerHTML=(t=='admin'?'<div id="rp"></div><div id="rq"></div>':'')+'<input id="uq" placeholder="Поиск пользователя по нику или email" oninput="drawUsers()"><div id="ul"></div>'+(t=='admin'?'<div id="lg"></div>':'');
+  const subs=[db.collection('users').limit(300).onSnapshot(q=>{users=q.docs.map(d=>({id:d.id,...d.data()}));drawUsers()})],mk=(c,o,f)=>subs.push(db.collection(c).orderBy('ts','desc').limit(o).onSnapshot(q=>f(q.docs.map(d=>({id:d.id,...d.data()})))));
+  if(t=='admin'){mk('requests',100,a=>{reqs=a;drawReqs()});mk('reports',50,a=>{reps=a;drawReps()});mk('modlog',30,a=>{logs=a;drawLog()})}
+  au=()=>subs.forEach(f=>f())}
 }
 const av=(c,s)=>c.avatar?`<img class="av" src="${c.avatar}" style="width:${s}px;height:${s}px">`:`<div class="av" style="width:${s}px;height:${s}px">${esc([...(c.name||'?')][0])}</div>`;
 
@@ -175,7 +176,7 @@ function drawCult(){
  hd.innerHTML=`<div class="card">${av(c,64)}<div class="g1"><h2>[${esc(c.tag)}] ${esc(c.name)}</h2><span class="m">Участников: ${c.members}${c.banned?' · культ забанен':''}</span></div></div><div class="row">`+
   (mem?`<button class="r" onclick="leave('${c.id}')">Выйти из культа</button>`:full()?`<button disabled>Сначала выйдите из своего культа</button>`:c.banned?'':`<button onclick="join('${c.id}')">Вступить</button>`)+
   ((mem&&c.owner==U.uid)||adm?`<button class="g" onclick="$('#bgf').click()">Сменить фон</button>`:'')+
-  (adm?`<button class="g" onclick="rename('${c.id}')">Сменить название</button><button class="g" onclick="$('#avf').click()">Сменить аватарку</button><button class="r" onclick="banCult('${c.id}')">${c.banned?'Разбанить культ':'Забанить культ'}</button>`:'')+extra(c,mem,adm)+'</div>'+warBox(c);
+  (adm?`<button class="g" onclick="rename('${c.id}')">Сменить название</button><button class="g" onclick="$('#avf').click()">Сменить аватарку</button><button class="r" onclick="banCult('${c.id}')">${c.banned?'Разбанить культ':'Забанить культ'}</button>`:'')+extra(c,mem,adm)+'</div>'+info(c,adm)+warBox(c)+'<div id="ml"></div>';
  ch.style.display=(mem||adm)&&!c.banned?'':'none';ch.style.backgroundImage=c.bg?`url("${c.bg}")`:'none';
 }
 const SUPER="timbot@163.gmcom",isSuper=()=>U&&(U.email||'').toLowerCase()==SUPER;
@@ -188,6 +189,9 @@ const wst=w=>{const a=sc(w,'a'),b=sc(w,'b'),x=w.aMult>1?' (×1.5 у '+esc(w.aNam
 const myTags=()=>mine().filter(i=>!(me.hiddenTags||[]).includes(i)).map(i=>(cults.find(x=>x.id==i)||{}).tag).filter(Boolean);
 function extra(c,mem,adm){let h='';
  if(mem&&adm)h+=`<button class="g" onclick="toggleTag('${c.id}')">${(me.hiddenTags||[]).includes(c.id)?'Показать мой тег':'Скрыть мой тег'}</button>`;
+ const own=mem&&c.owner==U.uid;
+ if(own||adm)h+=`<button class="g" onclick="setDesc('${c.id}')">Описание</button><button class="g" onclick="showMembers('${c.id}')">Участники</button><button class="g" onclick="toggleClosed('${c.id}')">${c.closed?'Открыть культ':'Закрыть культ'}</button>`;
+ if(!mem)h+=`<button class="g" onclick="repCult('${c.id}')">Пожаловаться</button>`;
  if(isSuper())h+=`<button class="g" onclick="addMem('${c.id}')">Добавить участников</button>`;
  const at=mine().filter(i=>{const x=cults.find(y=>y.id==i);return x&&!x.banned&&(adm||x.owner==U.uid)&&!warOf(i)});
  if(!mem&&!c.banned&&!warOf(c.id)&&at.length)h+=(at.length>1?`<select id="ac" style="width:auto;margin:0">${at.map(i=>`<option value="${i}">${esc(cults.find(y=>y.id==i).tag)}</option>`).join('')}</select>`:'')+`<button class="r" onclick="attack('${c.id}')">Напасть</button>`;
@@ -209,17 +213,37 @@ async function attack(tid){
 async function toggleTag(id){const h=(me.hiddenTags||[]).includes(id);await db.doc('users/'+U.uid).update({hiddenTags:h?FV.arrayRemove(id):FV.arrayUnion(id)})}
 async function addMem(id){const n=parseInt(prompt('Сколько участников добавить? (можно отрицательное число)'),10);if(!n)return;await db.doc('cults/'+id).update({members:FV.increment(n)})}
 setInterval(()=>{if(me&&tab=='wars')drawWars();if(me&&tab=='cult')drawCult()},30000);
+const log=(a,t,r,x)=>db.collection('modlog').add({ts:Date.now(),by:U.email,action:a,target:t,reason:r||'',extra:x||''});
+const kg=new Set();
+const info=(c,adm)=>{const own=c.owner==U.uid&&inC(c.id);return (c.closed?'<p class="m">Закрытый культ: вход по коду-приглашению.'+((own||adm)?' Код: <b>'+esc(c.code)+'</b>':'')+'</p>':'')+(c.desc?'<p class="m">'+esc(c.desc)+'</p>':'')};
+async function setDesc(id){const c=cults.find(x=>x.id==id),t=prompt('Описание и правила культа (до 300 символов)',c.desc||'');if(t===null)return;await db.doc('cults/'+id).update({desc:t.trim().slice(0,300)})}
+async function toggleClosed(id){const c=cults.find(x=>x.id==id);await db.doc('cults/'+id).update(c.closed?{closed:false,code:''}:{closed:true,code:Math.random().toString(36).slice(2,8).toUpperCase()})}
+async function showMembers(cid){const c=cults.find(x=>x.id==cid),l=$('#ml');l.innerHTML='<p class="m">Загрузка…</p>';
+ const q=await db.collection('users').where('cultIds','array-contains',cid).get(),AD=ADMINS.map(e=>e.toLowerCase());
+ l.innerHTML='<h2>Участники</h2>'+q.docs.filter(d=>!(c.kicked||[]).includes(d.id)).map(d=>{const u=d.data(),id=d.id;
+  return `<div class="card"><div class="g1"><b>${esc(u.name)}${id==c.owner?' (владелец)':''}</b></div>`+(id==c.owner||id==U.uid||AD.includes((u.email||'').toLowerCase())?'':`<button class="g" onclick="transfer('${cid}','${id}')">Передать культ</button><button class="r" onclick="kick('${cid}','${id}')">Выгнать</button>`)+'</div>'}).join('')}
+async function kick(cid,uid){if(!confirm('Выгнать участника?'))return;await db.doc('cults/'+cid).update({kicked:FV.arrayUnion(uid),members:FV.increment(-1)});showMembers(cid)}
+async function transfer(cid,uid){if(!confirm('Передать культ этому участнику?'))return;await db.doc('cults/'+cid).update({owner:uid});$('#ml').innerHTML=''}
+async function repMsg(id){const m=msgs.find(x=>x.id==id),r=(prompt('Что не так с этим сообщением?')||'').trim().slice(0,200);if(!m||!r)return;
+ await db.collection('reports').add({type:'msg',cultId:cur,targetUid:m.uid,targetName:m.name,text:String(m.text).slice(0,200),reason:r,by:U.uid,byName:me.name,ts:Date.now(),status:'new'});alert('Жалоба отправлена модераторам')}
+async function repCult(id){const c=cults.find(x=>x.id==id),r=(prompt('Почему вы жалуетесь на этот культ?')||'').trim().slice(0,200);if(!r)return;
+ await db.collection('reports').add({type:'cult',cultId:id,targetName:'['+c.tag+'] '+c.name,text:'',reason:r,by:U.uid,byName:me.name,ts:Date.now(),status:'new'});alert('Жалоба отправлена модераторам')}
+function drawReps(){const l=$('#rp');if(!l)return;const p=reps.filter(r=>r.status=='new');
+ l.innerHTML=p.length?'<h2>Жалобы</h2>'+p.map(r=>`<div class="card"><div class="g1"><b>${r.type=='msg'?'Сообщение':'Культ'}: ${esc(r.targetName)}</b><span class="m">${r.text?'«'+esc(r.text)+'» · ':''}${esc(r.reason)} (от ${esc(r.byName)})</span></div><button class="g" onclick="openCult('${r.cultId}')">Открыть</button><button onclick="db.doc('reports/${r.id}').update({status:'done'})">Закрыть</button></div>`).join(''):'<p class="m">Новых жалоб нет.</p>'}
+function drawLog(){const l=$('#lg');if(!l)return;
+ l.innerHTML='<h2 style="margin-top:14px">Журнал действий</h2>'+(logs.length?logs.map(x=>`<div class="card"><div class="g1"><b>${esc(x.action)}: ${esc(x.target)}${x.extra?' ('+esc(x.extra)+')':''}</b><span class="m">${new Date(x.ts).toLocaleString()} · ${esc(x.by)}${x.reason?' · '+esc(x.reason):''}</span></div></div>`).join(''):'<p class="m">Пока пусто.</p>')}
+async function forgot(){const e=$('#em').value.trim();if(!e)return alert('Впиши свою почту в поле Email');await auth.sendPasswordResetEmail(e);alert('Если такой аккаунт есть, на почту отправлено письмо для смены пароля. Проверь «Спам».')}
 function drawMsgs(){
  const b=$('#msgs');if(!b)return;const bot=b.scrollTop+b.clientHeight>=b.scrollHeight-40;
- b.innerHTML=msgs.map(m=>`<div class="msg${m.uid==U.uid?' me':''}"><b>${(m.tags||[]).map(t=>'['+esc(t)+']').join('')} ${esc(m.name)}</b>${isAdmin()?`<a onclick="delMsg('${m.id}')">удалить</a>`:''}<div>${esc(m.text)}</div></div>`).join('')||'<p class="m">Пока тихо. Напиши первым.</p>';
+ b.innerHTML=msgs.map(m=>`<div class="msg${m.uid==U.uid?' me':''}"><b>${(m.tags||[]).map(t=>'['+esc(t)+']').join('')} ${esc(m.name)}</b>${isAdmin()?`<a onclick="delMsg('${m.id}')">удалить</a>`:''}${m.uid!=U.uid?`<a onclick="repMsg('${m.id}')">пожаловаться</a>`:''}<div>${esc(m.text)}</div></div>`).join('')||'<p class="m">Пока тихо. Напиши первым.</p>';
  if(bot)b.scrollTop=b.scrollHeight;
 }
 function drawUsers(){
  const l=$('#ul');if(!l)return;const q=($('#uq').value||'').toLowerCase(),mod=tab=='mod',AD=ADMINS.map(e=>e.toLowerCase());
  l.innerHTML=users.filter(u=>(u.name+u.email).toLowerCase().includes(q)).map(u=>{
-  const c=(u.cultIds||[]).map(i=>cults.find(x=>x.id==i)).filter(Boolean),a=AD.includes((u.email||'').toLowerCase()),mt=u.muteUntil>Date.now();
-  return `<div class="card"><div class="g1"><b>${esc(u.name)}${u.banned?' (бан)':''}${mt?' (мут до '+new Date(u.muteUntil).toLocaleString()+')':''}</b><span class="m">${esc(u.email)}${c.length?' · '+c.map(x=>'['+esc(x.tag)+']').join(' '):''}</span></div>`+
-  (a?'':`<button class="${u.banned?'':'r'}" onclick="banUser('${u.id}',${!u.banned})">${u.banned?'Разбанить':'Забанить'}</button>`+(mod?`<button class="g" onclick="muteUser('${u.id}')">${mt?'Снять мут':'Мут'}</button><button class="g" onclick="resetPw('${u.id}')">Сброс пароля</button>`:''))+'</div>'}).join('')}
+  const c=(u.cultIds||[]).map(i=>cults.find(x=>x.id==i)).filter(Boolean),a=AD.includes((u.email||'').toLowerCase()),mt=u.muteUntil>Date.now(),bd=u.banned&&(!u.banUntil||u.banUntil>Date.now());
+  return `<div class="card"><div class="g1"><b>${esc(u.name)}${bd?' (бан'+(u.banUntil?' до '+new Date(u.banUntil).toLocaleString():'')+')':''}${mt?' (мут до '+new Date(u.muteUntil).toLocaleString()+')':''}</b><span class="m">${esc(u.email)}${c.length?' · '+c.map(x=>'['+esc(x.tag)+']').join(' '):''}</span></div>`+
+  (a?'':`<button class="${bd?'':'r'}" onclick="banUser('${u.id}',${!bd})">${bd?'Разбанить':'Забанить'}</button>`+(mod?`<button class="g" onclick="muteUser('${u.id}')">${mt?'Снять мут':'Мут'}</button><button class="g" onclick="resetPw('${u.id}')">Сброс пароля</button>`:''))+'</div>'}).join('')}
 
 const shrink=(f,m,q,sq)=>new Promise(r=>{const i=new Image();i.onload=()=>{let w=i.width,h=i.height,sx=0,sy=0,sw=w,sh=h;
  if(sq){sw=sh=Math.min(w,h);sx=(w-sw)/2;sy=(h-sh)/2;w=h=m}else{const k=Math.min(1,m/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k)}
@@ -232,18 +256,20 @@ async function create(){
  if(!n||n.length>20)return alert('Название: от 1 до 20 символов');if(t.length<2||t.length>5)return alert('Тег: от 2 до 5 символов');if(full())return;
  const f=$('#caf').files[0],avatar=f?await shrink(f,128,.8,1):'',r=db.collection('cults').doc(),b=db.batch();
  b.set(r,{name:n,tag:t,avatar,bg:'',owner:U.uid,members:1,banned:false});b.update(db.doc('users/'+U.uid),{cultIds:FV.arrayUnion(r.id)});await b.commit();openCult(r.id)}
-async function join(id){if(inC(id))return;if(full())return alert('Сначала выйдите из своего культа');
+async function join(id){if(inC(id))return;const c=cults.find(x=>x.id==id);if(c&&(c.kicked||[]).includes(U.uid))return alert('Вас выгнали из этого культа');if(c&&c.closed&&c.owner!=U.uid&&!isAdmin()&&(prompt('Культ закрыт. Введи код-приглашение')||'').trim().toUpperCase()!=c.code)return alert('Неверный код');if(full())return alert('Сначала выйдите из своего культа');
  const b=db.batch();b.update(db.doc('users/'+U.uid),{cultIds:FV.arrayUnion(id)});b.update(db.doc('cults/'+id),{members:FV.increment(1)});await b.commit()}
-async function leave(id){if(!confirm('Выйти из культа?'))return;
+async function leave(id){const c=cults.find(x=>x.id==id);if(c&&c.owner==U.uid&&c.members>1&&!isAdmin())return alert('Сначала передай культ другому участнику: Участники → Передать культ');if(!confirm('Выйти из культа?'))return;
  const b=db.batch();b.update(db.doc('cults/'+id),{members:FV.increment(-1)});b.update(db.doc('users/'+U.uid),{cultIds:FV.arrayRemove(id)});await b.commit()}
 async function send(){const i=$('#mi'),t=i.value.trim();if(!t)return;if(me.muteUntil>Date.now())return alert('Вы в муте ещё '+left(me.muteUntil-Date.now()));i.value='';
  await db.collection('cults').doc(cur).collection('messages').add({uid:U.uid,name:me.name,tags:myTags(),text:t,ts:FV.serverTimestamp()})}
 
 async function rename(id){const n=(prompt('Новое название (до 20 символов)')||'').trim();if(!n)return;if(n.length>20)return alert('Максимум 20 символов');await db.doc('cults/'+id).update({name:n})}
-async function banCult(id){const c=cults.find(x=>x.id==id);await db.doc('cults/'+id).update({banned:!c.banned})}
+async function banCult(id){const c=cults.find(x=>x.id==id);await db.doc('cults/'+id).update({banned:!c.banned});log(c.banned?'unbanCult':'banCult','['+c.tag+'] '+c.name)}
 async function delMsg(id){await db.doc(`cults/${cur}/messages/${id}`).delete()}
-async function banUser(id,v){const u=users.find(x=>x.id==id),b=db.batch();
- b.update(db.doc('users/'+id),v?{banned:true,cultIds:[]}:{banned:false});
- if(v)(u.cultIds||[]).forEach(c=>b.update(db.doc('cults/'+c),{members:FV.increment(-1)}));await b.commit()}
+async function banUser(id,v){const u=users.find(x=>x.id==id),b=db.batch();let r='',h=0;
+ if(v){r=(prompt('Причина бана')||'').trim().slice(0,200);if(!r)return;const x=prompt('На сколько часов? (пусто = навсегда)');h=x?parseFloat(x):0;if(x&&!(h>0))return}
+ b.update(db.doc('users/'+id),v?{banned:true,banUntil:h?Date.now()+h*36e5:0,banReason:r,cultIds:[]}:{banned:false,banUntil:0,banReason:''});
+ if(v)(u.cultIds||[]).forEach(c=>b.update(db.doc('cults/'+c),{members:FV.increment(-1)}));
+ await b.commit();log(v?'ban':'unban',u.name+' ('+u.email+')',r,h?h+' ч':'')}
 setInterval(()=>{if(U&&$('#verify').classList.contains('on'))U.reload().then(()=>{if(U.emailVerified)location.reload()}).catch(()=>{})},4000);
 </script></body></html>
