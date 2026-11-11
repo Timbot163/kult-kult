@@ -62,7 +62,7 @@ nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 <div class="row"><button id="ab" onclick="sub()">Войти</button><button class="g" id="at" onclick="tg()">Нет аккаунта? Регистрация</button></div></section>
 
 <section class="scr" id="verify"><div class="logo">Подтверди почту</div><p>Мы отправили ссылку на <b id="ve"></b>. Перейди по ней, потом нажми кнопку.</p>
-<div class="row"><button onclick="location.reload()">Я подтвердил почту</button><button class="g" onclick="U.sendEmailVerification().then(()=>alert('Письмо отправлено'))">Отправить ещё раз</button><button class="g" onclick="auth.signOut()">Выйти</button></div></section>
+<p class="m" id="vm"></p><div class="row"><button onclick="chk()">Я подтвердил почту</button><button class="g" onclick="U.sendEmailVerification().then(()=>alert('Письмо отправлено'))">Отправить ещё раз</button><button class="g" onclick="auth.signOut()">Выйти</button></div></section>
 
 <section class="scr" id="banned"><div class="logo">Вы забанены</div><p class="m">Администратор закрыл доступ к этому аккаунту.</p><button class="g" onclick="auth.signOut()">Выйти</button></section>
 
@@ -92,6 +92,10 @@ window.onunhandledrejection=e=>alert(e.reason&&e.reason.message||e.reason);
 const mine=()=>me.cultIds||[],inC=id=>mine().includes(id),full=()=>!isAdmin()&&mine().length>=1;
 const show=id=>{document.querySelectorAll('.scr').forEach(s=>s.classList.toggle('on',s.id==id))};
 
+async function chk(){const m=$('#vm');m.textContent='Проверяю…';
+ try{await U.reload();await U.getIdToken(true)}catch(e){m.textContent='Ошибка: '+(e.code||e.message);return}
+ if(U.emailVerified||isAdmin())location.reload();
+ else m.textContent='Firebase пока не видит подтверждения. Открой ссылку из самого нового письма (проверь «Спам»), дождись надписи «Your email has been verified» и нажми кнопку снова. Если ссылка пишет «expired» или «already used», нажми «Отправить ещё раз» и открой новое письмо.'}
 function tg(){reg=!reg;$('#nk').style.display=reg?'':'none';$('#ab').textContent=reg?'Зарегистрироваться':'Войти';$('#at').textContent=reg?'Уже есть аккаунт? Войти':'Нет аккаунта? Регистрация'}
 async function sub(){const e=$('#em').value.trim(),p=$('#pw').value;
  if(reg){const n=$('#nk').value.trim();if(!n)return alert('Введите ник');
@@ -103,6 +107,7 @@ auth.onAuthStateChanged(async u=>{
  if(!u)return show('auth');
  try{await u.reload()}catch(e){}
  if(!u.emailVerified&&!isAdmin()){$('#ve').textContent=u.email;return show('verify')}
+ try{await u.getIdToken(true)}catch(e){}
  const ref=db.collection('users').doc(u.uid);
  if(!(await ref.get()).exists)await ref.set({email:u.email,name:u.displayName||u.email.split('@')[0],cultIds:[],banned:false});
  unsubs.push(ref.onSnapshot(d=>{me={id:d.id,...d.data()};render()}));
